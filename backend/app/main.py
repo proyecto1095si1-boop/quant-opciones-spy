@@ -12,11 +12,12 @@ from app.opciones import filtrar_cadena
 from app.price_action import analizar
 from app.signal import generar_senal
 from app import paper
+from app import broker
 
 app = FastAPI(
     title="Quant Opciones SPY",
     description="Price action + griegas Black-Scholes + tickets de opciones para SPY",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 app.add_middleware(
@@ -32,14 +33,14 @@ app.add_middleware(
 def root():
     return {
         "proyecto": "Sistema de Inteligencia Cuantitativa de Opciones",
-        "version": "0.4.0",
-        "endpoints": ["/health", "/opciones", "/analisis", "/senal", "/greeks", "/paper/*"],
+        "version": "0.5.0",
+        "endpoints": ["/health", "/opciones", "/analisis", "/senal", "/greeks", "/paper/*", "/broker/*"],
     }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.4.0"}
+    return {"status": "ok", "version": "0.5.0"}
 
 
 @app.get("/opciones")
@@ -134,7 +135,7 @@ def get_greeks(
     }
 
 
-# ── Paper trading ──────────────────────────────────────────────
+# Paper trading
 
 @app.get("/paper/estado")
 def paper_estado():
@@ -211,3 +212,63 @@ def paper_cerrar(
 @app.post("/paper/reset")
 def paper_reset(cash: float = Query(100_000, ge=1000)):
     return paper.reset_account(cash=cash)
+
+
+# Broker Alpaca Paper
+
+@app.get("/broker/status")
+def broker_status():
+    return broker.status()
+
+
+@app.get("/broker/account")
+def broker_account():
+    try:
+        return broker.account()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/broker/positions")
+def broker_positions():
+    try:
+        return {"positions": broker.positions()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/broker/orders")
+def broker_orders(status: str = Query("open"), limit: int = Query(20, ge=1, le=100)):
+    try:
+        return {"orders": broker.orders(status=status, limit=limit)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/broker/ordenar")
+def broker_ordenar(
+    ticker: str = Query("SPY"),
+    qty: int = Query(1, ge=1, le=20),
+):
+    if not broker.configurado():
+        raise HTTPException(
+            status_code=400,
+            detail="Alpaca no configurado. Usá /paper/abrir para journal local, o definí API keys en .env",
+        )
+    try:
+        senal = generar_senal(ticker=ticker.upper())
+        if senal.get("accion") != "COMPRAR":
+            return {"ok": False, "reason": "señal no es COMPRAR", "senal": {
+                "bias": senal.get("bias"),
+                "accion": senal.get("accion"),
+                "justificacion": senal.get("justificacion"),
+            }}
+        result = broker.place_from_signal(senal, qty=qty)
+        result["senal"] = {
+            "bias": senal.get("bias"),
+            "accion": senal.get("accion"),
+            "contrato": senal.get("contrato_recomendado"),
+        }
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
