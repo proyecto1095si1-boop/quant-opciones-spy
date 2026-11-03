@@ -10,15 +10,20 @@ Plataforma de nodos que ingiere datos del S&P 500 (SPY), analiza price action y 
 quant-opciones-spy/
 ├── backend/
 │   ├── app/
-│   │   ├── __init__.py
-│   │   ├── opciones.py       # Descarga y filtrado de cadena de opciones
-│   │   ├── price_action.py   # Velas OHLCV + patrones + sesgo (SMAs)
-│   │   ├── signal.py         # Orquestador: bias → ticket de opción
-│   │   └── main.py           # API FastAPI
+│   │   ├── opciones.py       # Cadena de opciones filtrada
+│   │   ├── price_action.py   # Velas + patrones + SMAs
+│   │   ├── signal.py         # Orquestador → ticket
+│   │   └── main.py           # FastAPI
 │   └── requirements.txt
-├── frontend/                 # React Flow (próximo)
-├── .env.example
-├── .gitignore
+├── frontend/
+│   ├── src/
+│   │   ├── nodes/            # Market, Quant Engine, Signal
+│   │   ├── api.js
+│   │   ├── store.js          # Zustand
+│   │   ├── App.jsx           # React Flow canvas
+│   │   └── styles/
+│   ├── package.json
+│   └── vite.config.js
 └── README.md
 ```
 
@@ -26,89 +31,68 @@ quant-opciones-spy/
 
 - [x] 1. Cadena de opciones filtrada
 - [x] 2. API FastAPI (`/opciones`)
-- [x] 3. Velas OHLCV + patrones de price action (engulfing, doji, hammer…)
-- [x] 4. Sesgo con medias móviles + endpoint `/senal`
-- [ ] 5. Lienzo visual React Flow
+- [x] 3. Velas OHLCV + patrones (engulfing, doji, hammer…)
+- [x] 4. Sesgo con medias móviles + `/senal`
+- [x] 5. Lienzo visual React Flow (3 nodos)
 - [ ] 6. Letras griegas (Black-Scholes) + paper trading
 
 ## Cómo correr
 
+### Backend
+
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Probar módulos por separado
-python -m app.opciones
-python -c "from app.price_action import analizar; print(analizar('SPY'))"
-python -c "from app.signal import generar_senal; print(generar_senal('SPY'))"
-
-# Levantar la API
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Endpoints
-
-| Método | Ruta         | Descripción                                      |
-|--------|--------------|--------------------------------------------------|
-| GET    | `/`          | Info del proyecto                                |
-| GET    | `/health`    | Health check                                     |
-| GET    | `/opciones`  | Cadena de opciones filtrada                      |
-| GET    | `/analisis`  | Price action: velas, patrones y sesgo            |
-| GET    | `/senal`     | **Ticket completo**: bias → contrato recomendado |
-
-### Ejemplo de señal
+### Frontend
 
 ```bash
-curl "http://localhost:8000/senal?ticker=SPY"
+cd frontend
+npm install
+npm run dev
 ```
 
-Respuesta (esquema):
+Abrí http://localhost:5173
 
-```json
-{
-  "ticker": "SPY",
-  "bias": "BEARISH",
-  "accion": "COMPRAR",
-  "tipo_opcion": "put",
-  "justificacion": "Sesgo bajista → se buscan Puts OTM",
-  "precio_subyacente": 752.10,
-  "vencimiento": "2026-12-18",
-  "dte": 45,
-  "contrato_recomendado": {
-    "symbol": "SPY261218P00750000",
-    "strike": 750.0,
-    "bid": 12.3,
-    "ask": 12.6,
-    "mid": 12.45,
-    "spread_pct": 2.4,
-    "iv": 0.18,
-    "openInterest": 4200
-  },
-  "alternativas": [ ... ],
-  "analisis": {
-    "sesgo": { "bias": "BEARISH", "sma20": 769.3, "razones": [...] },
-    "patrones": [],
-    "velas_recientes": [ ... ]
-  }
-}
+El frontend llama a `http://localhost:8000`. Si necesitás otra URL:
+
+```bash
+VITE_API_URL=http://tu-api:8000 npm run dev
 ```
+
+## Flujo del lienzo
+
+```
+[Market]  ──►  [Quant Engine]  ──►  [Signal]
+ ticker         price action          ticket
+ timeframe      bias + patrones       contrato
+                botón "Ejecutar"
+```
+
+1. **Market Node** — elegís ticker y temporalidad  
+2. **Quant Engine** — al pulsar *Ejecutar análisis* llama a `/analisis` + `/senal`  
+3. **Signal Node** — muestra bias, acción (COMPRAR / ESPERAR) y el contrato recomendado  
+
+## Endpoints API
+
+| Método | Ruta         | Descripción                          |
+|--------|--------------|--------------------------------------|
+| GET    | `/health`    | Health check                         |
+| GET    | `/opciones`  | Cadena filtrada                      |
+| GET    | `/analisis`  | Price action + sesgo                 |
+| GET    | `/senal`     | Ticket completo (bias → contrato)    |
 
 ## Lógica del motor
 
-1. **Price Action** (`price_action.py`)
-   - Descarga OHLCV
-   - Detecta: Bullish/Bearish Engulfing, Doji, Hammer, Shooting Star
-   - Calcula sesgo con SMA20 / SMA50 + momentum 3-5 días
-
-2. **Selección de derivado** (`signal.py`)
-   - BULLISH → Calls OTM 30-45 DTE
-   - BEARISH → Puts OTM 30-45 DTE
-   - NEUTRAL → ESPERAR
-   - Ranking por liquidez (OI) y spread estrecho
+1. **Price Action** — OHLCV, Engulfing / Doji / Hammer / Shooting Star, SMA20/SMA50 + momentum  
+2. **Selección** — BULLISH→Calls OTM · BEARISH→Puts OTM · NEUTRAL→ESPERAR  
+3. **Ranking** — mayor Open Interest + spread estrecho  
 
 ## Fuentes de datos
 
-- **Desarrollo**: yfinance
-- **Producción** (futuro): Alpaca, Tradier o Interactive Brokers
+- Desarrollo: yfinance  
+- Producción (futuro): Alpaca, Tradier o Interactive Brokers  
