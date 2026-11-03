@@ -1,13 +1,14 @@
 # Sistema de Inteligencia Cuantitativa de Opciones (SPY)
 
-Price action → griegas Black-Scholes → ticket → paper local → **Alpaca Paper** (opcional).
+Price action → griegas → ticket → paper → Alpaca → **scanner multi-ticker** → **backtest**.
 
 > Proyecto educativo. No es asesoría financiera.
 
 ## Lienzo
 
 ```
-[Market] → [Quant Engine] → [Signal] → [Paper Journal]
+[Market]  →  [Quant Engine]  →  [Signal]  →  [Paper Journal]
+[Scanner]
 ```
 
 ## Cómo correr
@@ -15,34 +16,29 @@ Price action → griegas Black-Scholes → ticket → paper local → **Alpaca P
 ```bash
 cd backend && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# Opcional: copiá .env.example → .env y poné keys de Alpaca Paper
 uvicorn app.main:app --reload --port 8000
 
 cd frontend && npm install && npm run dev
 ```
 
-## Paper local vs Alpaca
+## Nuevos endpoints (v0.6)
 
-| | Paper local (`/paper/*`) | Alpaca Paper (`/broker/*`) |
-|--|--------------------------|----------------------------|
-| Keys | No | Sí (gratis en alpaca.markets) |
-| Persistencia | `backend/data/paper_journal.json` | Cuenta Alpaca |
-| Órdenes | Simuladas | Market/limit reales en paper |
-
+### Scanner
 ```bash
-# Estado broker
-curl localhost:8000/broker/status
-
-# Ordenar desde señal (requiere keys)
-curl -X POST "localhost:8000/broker/ordenar?ticker=SPY&qty=1"
+curl "http://localhost:8000/scanner?tickers=SPY,QQQ,IWM,DIA,XLF"
 ```
 
-## API resumen
+### Backtest
+```bash
+curl "http://localhost:8000/backtest?ticker=SPY&period=6mo&horizon_days=5"
+```
 
-- `/analisis` · `/senal` · `/greeks`
-- `/paper/estado` · `/paper/abrir` · `/paper/cerrar`
-- `/broker/status` · `/broker/ordenar` · `/broker/positions`
+## API
 
-## Stack
-
-FastAPI + yfinance + Black-Scholes · React Flow + Zustand · Alpaca Paper (opcional)
+| Ruta | Uso |
+|------|-----|
+| `/analisis` `/senal` `/greeks` | Motor de una señal |
+| `/scanner` | Universo multi-ticker |
+| `/backtest` | Validación histórica del bias |
+| `/paper/*` | Journal local |
+| `/broker/*` | Alpaca Paper (opcional) |
