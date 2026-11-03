@@ -11,11 +11,12 @@ from app.greeks import black_scholes
 from app.opciones import filtrar_cadena
 from app.price_action import analizar
 from app.signal import generar_senal
+from app import paper
 
 app = FastAPI(
     title="Quant Opciones SPY",
     description="Price action + griegas Black-Scholes + tickets de opciones para SPY",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -31,14 +32,14 @@ app.add_middleware(
 def root():
     return {
         "proyecto": "Sistema de Inteligencia Cuantitativa de Opciones",
-        "version": "0.3.0",
-        "endpoints": ["/health", "/opciones", "/analisis", "/senal", "/greeks"],
+        "version": "0.4.0",
+        "endpoints": ["/health", "/opciones", "/analisis", "/senal", "/greeks", "/paper/*"],
     }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.3.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 @app.get("/opciones")
@@ -131,3 +132,82 @@ def get_greeks(
         "inputs": {"S": S, "K": K, "dte": dte, "T_years": round(T, 4), "iv": sigma, "r": r, "tipo": tipo},
         "greeks": result,
     }
+
+
+# ── Paper trading ──────────────────────────────────────────────
+
+@app.get("/paper/estado")
+def paper_estado():
+    return paper.estado()
+
+
+@app.get("/paper/posiciones")
+def paper_posiciones():
+    return {"positions": paper.listar_posiciones()}
+
+
+@app.get("/paper/historial")
+def paper_historial(limit: int = Query(50, ge=1, le=200)):
+    return {"closed": paper.listar_cerrados(limit=limit)}
+
+
+@app.post("/paper/abrir")
+def paper_abrir(
+    ticker: str = Query("SPY"),
+    qty: int = Query(1, ge=1, le=50),
+    notas: str = Query(""),
+    usar_senal: bool = Query(True),
+):
+    try:
+        if usar_senal:
+            senal = generar_senal(ticker=ticker.upper())
+            result = paper.abrir_desde_senal(senal, qty=qty, notas=notas)
+            result["senal"] = {
+                "bias": senal.get("bias"),
+                "accion": senal.get("accion"),
+                "justificacion": senal.get("justificacion"),
+            }
+            return result
+        raise HTTPException(status_code=400, detail="usar_senal=false requiere endpoint manual")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/paper/abrir-manual")
+def paper_abrir_manual(
+    ticker: str = Query(...),
+    tipo: Literal["call", "put"] = Query(...),
+    symbol: str = Query(...),
+    strike: float = Query(...),
+    premium: float = Query(..., gt=0),
+    qty: int = Query(1, ge=1, le=50),
+    vencimiento: str = Query(""),
+    notas: str = Query(""),
+):
+    try:
+        return paper.abrir_manual(
+            ticker=ticker, tipo=tipo, symbol=symbol,
+            strike=strike, premium=premium, qty=qty,
+            vencimiento=vencimiento, notas=notas,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/paper/cerrar")
+def paper_cerrar(
+    position_id: str = Query(...),
+    premium_salida: float = Query(..., ge=0),
+    notas: str = Query(""),
+):
+    try:
+        return paper.cerrar(position_id, premium_salida=premium_salida, notas=notas)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/paper/reset")
+def paper_reset(cash: float = Query(100_000, ge=1000)):
+    return paper.reset_account(cash=cash)
