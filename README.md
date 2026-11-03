@@ -1,98 +1,72 @@
 # Sistema de Inteligencia Cuantitativa de Opciones (SPY)
 
-Plataforma de nodos que ingiere datos del S&P 500 (SPY), analiza price action y propone contratos de opciones.
+Plataforma de nodos que ingiere datos del S&P 500 (SPY), analiza price action, calcula griegas Black-Scholes y propone contratos de opciones.
 
-> **Aviso**: proyecto educativo. Validar siempre en paper trading antes de usar dinero real. No es asesoría financiera.
+> **Aviso**: proyecto educativo. Validar siempre en paper trading. No es asesoría financiera.
 
 ## Estructura
 
 ```
 quant-opciones-spy/
-├── backend/
-│   ├── app/
-│   │   ├── opciones.py       # Cadena de opciones filtrada
-│   │   ├── price_action.py   # Velas + patrones + SMAs
-│   │   ├── signal.py         # Orquestador → ticket
-│   │   └── main.py           # FastAPI
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── nodes/            # Market, Quant Engine, Signal
-│   │   ├── api.js
-│   │   ├── store.js          # Zustand
-│   │   ├── App.jsx           # React Flow canvas
-│   │   └── styles/
-│   ├── package.json
-│   └── vite.config.js
-└── README.md
+├── backend/app/
+│   ├── opciones.py       # Cadena de opciones filtrada
+│   ├── price_action.py   # Velas + patrones + SMAs
+│   ├── greeks.py         # Black-Scholes (Delta, Theta, Gamma, Vega)
+│   ├── signal.py         # Orquestador → ticket
+│   └── main.py           # FastAPI
+└── frontend/             # React Flow (Market → Quant → Signal)
 ```
 
 ## Hoja de ruta
 
 - [x] 1. Cadena de opciones filtrada
-- [x] 2. API FastAPI (`/opciones`)
-- [x] 3. Velas OHLCV + patrones (engulfing, doji, hammer…)
-- [x] 4. Sesgo con medias móviles + `/senal`
-- [x] 5. Lienzo visual React Flow (3 nodos)
-- [ ] 6. Letras griegas (Black-Scholes) + paper trading
+- [x] 2. API FastAPI
+- [x] 3. Velas OHLCV + patrones
+- [x] 4. Sesgo con medias móviles
+- [x] 5. Lienzo React Flow
+- [x] 6. Letras griegas (Black-Scholes) + filtros Delta/Theta
+- [ ] 7. Paper trading / broker connect
 
 ## Cómo correr
 
-### Backend
-
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
+# Backend
+cd backend && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
+
+# Frontend
+cd frontend && npm install && npm run dev
 ```
 
-### Frontend
+## Endpoints
+
+| Ruta | Descripción |
+|------|-------------|
+| `/opciones` | Cadena filtrada |
+| `/analisis` | Price action + sesgo |
+| `/senal` | **Ticket**: bias → contrato + griegas |
+| `/greeks` | Calculadora BS standalone (`S`, `K`, `dte`, `iv`, `tipo`) |
+
+### Filtros de griegas en `/senal`
+
+- `delta_min` / `delta_max` (default 0.20–0.45): zona OTM con probabilidad razonable
+- `theta_max_abs` (default 0.15): techo de decaimiento diario
+
+### Ejemplo calculadora
 
 ```bash
-cd frontend
-npm install
-npm run dev
+curl "http://localhost:8000/greeks?S=752&K=760&dte=35&iv=0.18&tipo=put"
 ```
-
-Abrí http://localhost:5173
-
-El frontend llama a `http://localhost:8000`. Si necesitás otra URL:
-
-```bash
-VITE_API_URL=http://tu-api:8000 npm run dev
-```
-
-## Flujo del lienzo
-
-```
-[Market]  ──►  [Quant Engine]  ──►  [Signal]
- ticker         price action          ticket
- timeframe      bias + patrones       contrato
-                botón "Ejecutar"
-```
-
-1. **Market Node** — elegís ticker y temporalidad  
-2. **Quant Engine** — al pulsar *Ejecutar análisis* llama a `/analisis` + `/senal`  
-3. **Signal Node** — muestra bias, acción (COMPRAR / ESPERAR) y el contrato recomendado  
-
-## Endpoints API
-
-| Método | Ruta         | Descripción                          |
-|--------|--------------|--------------------------------------|
-| GET    | `/health`    | Health check                         |
-| GET    | `/opciones`  | Cadena filtrada                      |
-| GET    | `/analisis`  | Price action + sesgo                 |
-| GET    | `/senal`     | Ticket completo (bias → contrato)    |
 
 ## Lógica del motor
 
-1. **Price Action** — OHLCV, Engulfing / Doji / Hammer / Shooting Star, SMA20/SMA50 + momentum  
-2. **Selección** — BULLISH→Calls OTM · BEARISH→Puts OTM · NEUTRAL→ESPERAR  
-3. **Ranking** — mayor Open Interest + spread estrecho  
+1. **Price Action** → bias BULLISH / BEARISH / NEUTRAL  
+2. **Cadena** → OTM, liquidez, spread  
+3. **Griegas BS** → Delta, Theta, Gamma, Vega  
+4. **Filtro** → Delta 0.20–0.45, |Theta| acotado  
+5. **Ranking** → OI alto + Delta ~0.30 + spread bajo  
 
-## Fuentes de datos
+## Frontend
 
-- Desarrollo: yfinance  
-- Producción (futuro): Alpaca, Tradier o Interactive Brokers  
+Nodo **Signal** muestra Delta, Theta, Gamma y Vega del contrato recomendado.
