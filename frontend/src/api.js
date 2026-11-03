@@ -29,4 +29,12 @@ export const api = {
     request('/paper/cerrar', { position_id, premium_salida }, { method: 'POST' }),
   paperReset: (cash = 100000) =>
     request('/paper/reset', { cash }, { method: 'POST' }),
+
+  brokerStatus: () => request('/broker/status'),
+  brokerAccount: () => request('/broker/account'),
+  brokerPositions: () => request('/broker/positions'),
+  scanner: (tickers = '') => request('/scanner', tickers ? { tickers } : {}),
+  backtest: (params = {}) => request('/backtest', { ticker: 'SPY', ...params }),
+  brokerOrdenar: (ticker = 'SPY', qty = 1) =>
+    request('/broker/ordenar', { ticker, qty }, { method: 'POST' }),
 }
