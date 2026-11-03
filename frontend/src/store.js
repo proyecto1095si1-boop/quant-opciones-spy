@@ -12,6 +12,9 @@ export const useStore = create((set, get) => ({
   analisis: null,
   senal: null,
 
+  paper: null,
+  paperLoading: false,
+
   setTicker: (ticker) => set({ ticker: ticker.toUpperCase() }),
   setTimeframe: (timeframe) => set({ timeframe }),
 
@@ -31,6 +34,30 @@ export const useStore = create((set, get) => ({
       })
     } catch (e) {
       set({ loading: false, error: e.message || 'Error al analizar' })
+    }
+  },
+
+  refreshPaper: async () => {
+    set({ paperLoading: true })
+    try {
+      const paper = await api.paperEstado()
+      set({ paper, paperLoading: false })
+    } catch (e) {
+      set({ paperLoading: false })
+    }
+  },
+
+  openPaperFromSignal: async (qty = 1) => {
+    const { ticker, refreshPaper } = get()
+    set({ paperLoading: true, error: null })
+    try {
+      const result = await api.paperAbrir(ticker, qty)
+      await refreshPaper()
+      set({ paperLoading: false })
+      return result
+    } catch (e) {
+      set({ paperLoading: false, error: e.message })
+      throw e
     }
   },
 
