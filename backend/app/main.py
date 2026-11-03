@@ -13,11 +13,13 @@ from app.price_action import analizar
 from app.signal import generar_senal
 from app import paper
 from app import broker
+from app.scanner import escanear, DEFAULT_UNIVERSE
+from app.backtest import backtest_bias
 
 app = FastAPI(
     title="Quant Opciones SPY",
-    description="Price action + griegas Black-Scholes + tickets de opciones para SPY",
-    version="0.5.0",
+    description="Price action + griegas + scanner + backtest + paper + Alpaca",
+    version="0.6.0",
 )
 
 app.add_middleware(
@@ -33,14 +35,17 @@ app.add_middleware(
 def root():
     return {
         "proyecto": "Sistema de Inteligencia Cuantitativa de Opciones",
-        "version": "0.5.0",
-        "endpoints": ["/health", "/opciones", "/analisis", "/senal", "/greeks", "/paper/*", "/broker/*"],
+        "version": "0.6.0",
+        "endpoints": [
+            "/health", "/opciones", "/analisis", "/senal", "/greeks",
+            "/paper/*", "/broker/*", "/scanner", "/backtest",
+        ],
     }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.5.0"}
+    return {"status": "ok", "version": "0.6.0"}
 
 
 @app.get("/opciones")
@@ -57,13 +62,9 @@ def get_opciones(
         raise HTTPException(status_code=400, detail="dte_min > dte_max")
     try:
         return filtrar_cadena(
-            ticker=ticker.upper(),
-            tipo=tipo,
-            dte_min=dte_min,
-            dte_max=dte_max,
-            otm_max_pct=otm_max_pct,
-            oi_min=oi_min,
-            spread_max_pct=spread_max_pct,
+            ticker=ticker.upper(), tipo=tipo,
+            dte_min=dte_min, dte_max=dte_max,
+            otm_max_pct=otm_max_pct, oi_min=oi_min, spread_max_pct=spread_max_pct,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -101,15 +102,9 @@ def get_senal(
         raise HTTPException(status_code=400, detail="dte_min > dte_max")
     try:
         return generar_senal(
-            ticker=ticker.upper(),
-            dte_min=dte_min,
-            dte_max=dte_max,
-            otm_max_pct=otm_max_pct,
-            oi_min=oi_min,
-            spread_max_pct=spread_max_pct,
-            delta_min=delta_min,
-            delta_max=delta_max,
-            theta_max_abs=theta_max_abs,
+            ticker=ticker.upper(), dte_min=dte_min, dte_max=dte_max,
+            otm_max_pct=otm_max_pct, oi_min=oi_min, spread_max_pct=spread_max_pct,
+            delta_min=delta_min, delta_max=delta_max, theta_max_abs=theta_max_abs,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -119,10 +114,10 @@ def get_senal(
 
 @app.get("/greeks")
 def get_greeks(
-    S: float = Query(..., description="Precio del subyacente"),
-    K: float = Query(..., description="Strike"),
-    dte: int = Query(..., ge=0, description="Días al vencimiento"),
-    iv: float = Query(..., gt=0, description="Volatilidad implícita (decimal)"),
+    S: float = Query(...),
+    K: float = Query(...),
+    dte: int = Query(..., ge=0),
+    iv: float = Query(..., gt=0),
     tipo: Literal["call", "put"] = Query("call"),
     r: float = Query(0.045),
 ):
@@ -134,8 +129,6 @@ def get_greeks(
         "greeks": result,
     }
 
-
-# Paper trading
 
 @app.get("/paper/estado")
 def paper_estado():
@@ -189,9 +182,8 @@ def paper_abrir_manual(
 ):
     try:
         return paper.abrir_manual(
-            ticker=ticker, tipo=tipo, symbol=symbol,
-            strike=strike, premium=premium, qty=qty,
-            vencimiento=vencimiento, notas=notas,
+            ticker=ticker, tipo=tipo, symbol=symbol, strike=strike,
+            premium=premium, qty=qty, vencimiento=vencimiento, notas=notas,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -213,8 +205,6 @@ def paper_cerrar(
 def paper_reset(cash: float = Query(100_000, ge=1000)):
     return paper.reset_account(cash=cash)
 
-
-# Broker Alpaca Paper
 
 @app.get("/broker/status")
 def broker_status():
@@ -246,23 +236,24 @@ def broker_orders(status: str = Query("open"), limit: int = Query(20, ge=1, le=1
 
 
 @app.post("/broker/ordenar")
-def broker_ordenar(
-    ticker: str = Query("SPY"),
-    qty: int = Query(1, ge=1, le=20),
-):
+def broker_ordenar(ticker: str = Query("SPY"), qty: int = Query(1, ge=1, le=20)):
     if not broker.configurado():
         raise HTTPException(
             status_code=400,
-            detail="Alpaca no configurado. Usá /paper/abrir para journal local, o definí API keys en .env",
+            detail="Alpaca no configurado. Usá /paper/abrir o definí API keys en .env",
         )
     try:
         senal = generar_senal(ticker=ticker.upper())
         if senal.get("accion") != "COMPRAR":
-            return {"ok": False, "reason": "señal no es COMPRAR", "senal": {
-                "bias": senal.get("bias"),
-                "accion": senal.get("accion"),
-                "justificacion": senal.get("justificacion"),
-            }}
+            return {
+                "ok": False,
+                "reason": "señal no es COMPRAR",
+                "senal": {
+                    "bias": senal.get("bias"),
+                    "accion": senal.get("accion"),
+                    "justificacion": senal.get("justificacion"),
+                },
+            }
         result = broker.place_from_signal(senal, qty=qty)
         result["senal"] = {
             "bias": senal.get("bias"),
@@ -272,3 +263,34 @@ def broker_ordenar(
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/scanner")
+def get_scanner(
+    tickers: str = Query("", description="Lista separada por comas. Vacío = default"),
+):
+    lista = [t.strip() for t in tickers.split(",") if t.strip()] if tickers else None
+    try:
+        return escanear(lista)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/backtest")
+def get_backtest(
+    ticker: str = Query("SPY"),
+    period: str = Query("6mo"),
+    horizon_days: int = Query(5, ge=1, le=20),
+    min_points: int = Query(2, ge=1, le=5),
+):
+    try:
+        return backtest_bias(
+            ticker=ticker.upper(),
+            period=period,
+            horizon_days=horizon_days,
+            min_points=min_points,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
