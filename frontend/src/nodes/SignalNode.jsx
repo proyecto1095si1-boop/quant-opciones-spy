@@ -67,22 +67,45 @@ export default function SignalNode() {
                 <div>
                   <span className="label">IV</span>
                   <span className="value">
-                    {c.iv != null ? `${(c.iv * 100).toFixed(1)}%` : '—'}
+                    {c.iv != null ? `${(Number(c.iv) * 100).toFixed(1)}%` : '—'}
                   </span>
                 </div>
               </div>
+
+              {(c.delta != null || c.theta != null) && (
+                <div className="greeks-grid">
+                  <div>
+                    <span className="label">Delta</span>
+                    <span className="value greeks">{c.delta?.toFixed(3) ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span className="label">Theta</span>
+                    <span className="value greeks">{c.theta?.toFixed(3) ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span className="label">Gamma</span>
+                    <span className="value greeks">{c.gamma?.toFixed(4) ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span className="label">Vega</span>
+                    <span className="value greeks">{c.vega?.toFixed(3) ?? '—'}</span>
+                  </div>
+                </div>
+              )}
             </div>
+
             {senal.vencimiento && (
               <div className="node-meta">
                 Vto {senal.vencimiento} · {senal.dte} DTE · {senal.tipo_opcion?.toUpperCase()}
               </div>
             )}
+
             {senal.alternativas?.length > 0 && (
               <div className="alternativas">
                 <span className="label">Alternativas</span>
                 {senal.alternativas.map((a) => (
                   <div key={a.symbol} className="alt-row">
-                    {a.strike} · mid ${a.mid} · OI {a.openInterest}
+                    {a.strike} · Δ {a.delta?.toFixed(2) ?? '—'} · mid ${a.mid}
                   </div>
                 ))}
               </div>
