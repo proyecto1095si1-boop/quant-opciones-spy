@@ -1,30 +1,16 @@
 # Sistema de Inteligencia Cuantitativa de Opciones (SPY)
 
-Plataforma de nodos: price action → griegas Black-Scholes → ticket de opciones → **paper trading**.
+Plataforma de nodos: price action → griegas Black-Scholes → ticket → **paper trading**.
 
-> **Aviso**: proyecto educativo. Validar siempre en paper trading. No es asesoría financiera.
+> **Aviso**: proyecto educativo. No es asesoría financiera.
 
-## Estructura
+## Lienzo (4 nodos)
 
 ```
-backend/app/
-  opciones.py       # Cadena filtrada
-  price_action.py   # Velas + patrones + SMAs
-  greeks.py         # Black-Scholes
-  signal.py         # Orquestador → ticket
-  paper.py          # Journal paper (posiciones + PnL)
-  main.py           # FastAPI
-frontend/           # React Flow (Market → Quant → Signal)
-backend/data/       # Journal JSON (gitignored)
+[Market] → [Quant Engine] → [Signal] → [Paper Journal]
+ ticker      bias + patrones    ticket + griegas   posiciones / PnL
+             Ejecutar análisis  Abrir en paper     cerrar / reset
 ```
-
-## Hoja de ruta
-
-- [x] 1–4 Backend (opciones, price action, sesgo, API)
-- [x] 5 Lienzo React Flow
-- [x] 6 Griegas Black-Scholes
-- [x] 7 Paper trading (journal, abrir/cerrar, PnL)
-- [ ] 8 Broker real (Alpaca / IB) — opcional
 
 ## Cómo correr
 
@@ -38,30 +24,20 @@ uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
-## Paper trading
+## API
 
-| Endpoint | Descripción |
-|----------|-------------|
-| `GET /paper/estado` | Cash, PnL realizado, winrate |
-| `GET /paper/posiciones` | Posiciones abiertas |
-| `GET /paper/historial` | Trades cerrados |
-| `POST /paper/abrir?ticker=SPY&qty=1` | Genera señal y abre si es COMPRAR |
-| `POST /paper/abrir-manual` | Entrada manual |
-| `POST /paper/cerrar?position_id=…&premium_salida=…` | Cierra y calcula PnL |
-| `POST /paper/reset?cash=100000` | Reinicia account |
+| Ruta | Uso |
+|------|-----|
+| `/analisis` | Price action + sesgo |
+| `/senal` | Ticket + griegas (Delta/Theta) |
+| `/greeks` | Calculadora BS |
+| `/paper/estado` | Cash, PnL, winrate |
+| `/paper/abrir` | Abre desde señal |
+| `/paper/cerrar` | Cierra con prima de salida |
+| `/paper/reset` | Reinicia account |
 
-Cash inicial: **$100,000**. Cada contrato = prima × 100 × qty.
+Cash paper inicial: **$100,000**.
 
-En el frontend, el nodo **Signal** tiene el botón **Abrir en paper** cuando hay señal de COMPRAR. El topbar muestra cash y PnL.
+## Stack
 
-## Endpoints principales
-
-`/opciones` · `/analisis` · `/senal` · `/greeks` · `/paper/*`
-
-## Lógica del motor
-
-1. Price action → bias  
-2. Cadena OTM + liquidez  
-3. Griegas (Delta 0.20–0.45, |Theta| acotado)  
-4. Ranking → ticket  
-5. Paper: abrir / cerrar / journal  
+Python + FastAPI + yfinance · React Flow + Zustand · Black-Scholes propio
