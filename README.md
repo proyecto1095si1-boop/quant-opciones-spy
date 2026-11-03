@@ -1,31 +1,30 @@
 # Sistema de Inteligencia Cuantitativa de Opciones (SPY)
 
-Plataforma de nodos que ingiere datos del S&P 500 (SPY), analiza price action, calcula griegas Black-Scholes y propone contratos de opciones.
+Plataforma de nodos: price action → griegas Black-Scholes → ticket de opciones → **paper trading**.
 
 > **Aviso**: proyecto educativo. Validar siempre en paper trading. No es asesoría financiera.
 
 ## Estructura
 
 ```
-quant-opciones-spy/
-├── backend/app/
-│   ├── opciones.py       # Cadena de opciones filtrada
-│   ├── price_action.py   # Velas + patrones + SMAs
-│   ├── greeks.py         # Black-Scholes (Delta, Theta, Gamma, Vega)
-│   ├── signal.py         # Orquestador → ticket
-│   └── main.py           # FastAPI
-└── frontend/             # React Flow (Market → Quant → Signal)
+backend/app/
+  opciones.py       # Cadena filtrada
+  price_action.py   # Velas + patrones + SMAs
+  greeks.py         # Black-Scholes
+  signal.py         # Orquestador → ticket
+  paper.py          # Journal paper (posiciones + PnL)
+  main.py           # FastAPI
+frontend/           # React Flow (Market → Quant → Signal)
+backend/data/       # Journal JSON (gitignored)
 ```
 
 ## Hoja de ruta
 
-- [x] 1. Cadena de opciones filtrada
-- [x] 2. API FastAPI
-- [x] 3. Velas OHLCV + patrones
-- [x] 4. Sesgo con medias móviles
-- [x] 5. Lienzo React Flow
-- [x] 6. Letras griegas (Black-Scholes) + filtros Delta/Theta
-- [ ] 7. Paper trading / broker connect
+- [x] 1–4 Backend (opciones, price action, sesgo, API)
+- [x] 5 Lienzo React Flow
+- [x] 6 Griegas Black-Scholes
+- [x] 7 Paper trading (journal, abrir/cerrar, PnL)
+- [ ] 8 Broker real (Alpaca / IB) — opcional
 
 ## Cómo correr
 
@@ -39,34 +38,30 @@ uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
-## Endpoints
+## Paper trading
 
-| Ruta | Descripción |
-|------|-------------|
-| `/opciones` | Cadena filtrada |
-| `/analisis` | Price action + sesgo |
-| `/senal` | **Ticket**: bias → contrato + griegas |
-| `/greeks` | Calculadora BS standalone (`S`, `K`, `dte`, `iv`, `tipo`) |
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /paper/estado` | Cash, PnL realizado, winrate |
+| `GET /paper/posiciones` | Posiciones abiertas |
+| `GET /paper/historial` | Trades cerrados |
+| `POST /paper/abrir?ticker=SPY&qty=1` | Genera señal y abre si es COMPRAR |
+| `POST /paper/abrir-manual` | Entrada manual |
+| `POST /paper/cerrar?position_id=…&premium_salida=…` | Cierra y calcula PnL |
+| `POST /paper/reset?cash=100000` | Reinicia account |
 
-### Filtros de griegas en `/senal`
+Cash inicial: **$100,000**. Cada contrato = prima × 100 × qty.
 
-- `delta_min` / `delta_max` (default 0.20–0.45): zona OTM con probabilidad razonable
-- `theta_max_abs` (default 0.15): techo de decaimiento diario
+En el frontend, el nodo **Signal** tiene el botón **Abrir en paper** cuando hay señal de COMPRAR. El topbar muestra cash y PnL.
 
-### Ejemplo calculadora
+## Endpoints principales
 
-```bash
-curl "http://localhost:8000/greeks?S=752&K=760&dte=35&iv=0.18&tipo=put"
-```
+`/opciones` · `/analisis` · `/senal` · `/greeks` · `/paper/*`
 
 ## Lógica del motor
 
-1. **Price Action** → bias BULLISH / BEARISH / NEUTRAL  
-2. **Cadena** → OTM, liquidez, spread  
-3. **Griegas BS** → Delta, Theta, Gamma, Vega  
-4. **Filtro** → Delta 0.20–0.45, |Theta| acotado  
-5. **Ranking** → OI alto + Delta ~0.30 + spread bajo  
-
-## Frontend
-
-Nodo **Signal** muestra Delta, Theta, Gamma y Vega del contrato recomendado.
+1. Price action → bias  
+2. Cadena OTM + liquidez  
+3. Griegas (Delta 0.20–0.45, |Theta| acotado)  
+4. Ranking → ticket  
+5. Paper: abrir / cerrar / journal  
